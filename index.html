@@ -225,7 +225,7 @@ Source: https://example.com"></textarea>
       }
       
       previewEl.style.display = "block";
-      let html = <div class="muted" style="margin-bottom:10px">Found ${parsed.length} questions.</div>;
+      let html = `<div class="muted" style="margin-bottom:10px">Found ${parsed.length} questions.</div>`;
       
       parsed.forEach((p, i) => {
         const topic = detectTopic(p.raw); // This now handles explicit "NP:" tags
@@ -236,10 +236,10 @@ Source: https://example.com"></textarea>
         if(!p.choices.D) missing.push("D");
         if(!p.answer) missing.push("Ans");
 
-        const warn = missing.length > 0 ? <span style="color:red;font-weight:bold">[MISSING: ${missing.join(',')}]</span> : "";
+        const warn = missing.length > 0 ? `<span style="color:red;font-weight:bold">[MISSING: ${missing.join(',')}]</span>` : "";
 
         // Source display in Preview
-        const sourceDisplay = p.source ? <div class="small" style="margin-top:2px; color:#007bff;"><b>Src:</b> ${escapeHtml(p.source)}</div> : "";
+        const sourceDisplay = p.source ? `<div class="small" style="margin-top:2px; color:#007bff;"><b>Src:</b> ${escapeHtml(p.source)}</div>` : "";
 
         html += `<div class="question-card">
           <div style="display:flex; justify-content:space-between;">
@@ -248,17 +248,17 @@ Source: https://example.com"></textarea>
           </div>
           <div style="margin:5px 0; font-weight:500;">${escapeHtml(p.question)}</div>
           <div class="small" style="margin-left:10px;">
-             ${p.choices.A ? A: ${escapeHtml(p.choices.A)} : '<span style="color:red">A: MISSING</span>'}<br>
-             ${p.choices.B ? B: ${escapeHtml(p.choices.B)} : '<span style="color:red">B: MISSING</span>'}<br>
-             ${p.choices.C ? C: ${escapeHtml(p.choices.C)} : '<span style="color:red">C: MISSING</span>'}<br>
-             ${p.choices.D ? D: ${escapeHtml(p.choices.D)} : '<span style="color:red">D: MISSING</span>'}
+             ${p.choices.A ? `A: ${escapeHtml(p.choices.A)}` : '<span style="color:red">A: MISSING</span>'}<br>
+             ${p.choices.B ? `B: ${escapeHtml(p.choices.B)}` : '<span style="color:red">B: MISSING</span>'}<br>
+             ${p.choices.C ? `C: ${escapeHtml(p.choices.C)}` : '<span style="color:red">C: MISSING</span>'}<br>
+             ${p.choices.D ? `D: ${escapeHtml(p.choices.D)}` : '<span style="color:red">D: MISSING</span>'}
           </div>
-          ${p.rationale ? <div class="small" style="margin-top:5px; background:#f0f0f0; padding:5px;"><b>Rat:</b> ${escapeHtml(p.rationale)}</div> : ""}
+          ${p.rationale ? `<div class="small" style="margin-top:5px; background:#f0f0f0; padding:5px;"><b>Rat:</b> ${escapeHtml(p.rationale)}</div>` : ""}
           ${sourceDisplay}
         </div>`;
       });
       previewEl.innerHTML = html;
-      statusEl.textContent = Previewed ${parsed.length} question(s).;
+      statusEl.textContent = `Previewed ${parsed.length} question(s).`;
     });
 
     btnClear.addEventListener("click", () => {
@@ -314,8 +314,8 @@ Source: https://example.com"></textarea>
           count++;
         }
 
-        statusEl.textContent = Success! Uploaded ${count} questions.;
-        alert(Successfully uploaded ${count} questions.);
+        statusEl.textContent = `Success! Uploaded ${count} questions.`;
+        alert(`Successfully uploaded ${count} questions.`);
         document.getElementById("bulkRaw").value = "";
         previewEl.style.display = "none";
         btnUpload.textContent = "2. Upload All";
@@ -344,7 +344,7 @@ Source: https://example.com"></textarea>
           return;
         }
 
-        let html = <table><thead><tr><th style="width:50%">Question Details</th><th>NP Set</th><th>Answer</th><th>Action</th></tr></thead><tbody>;
+        let html = `<table><thead><tr><th style="width:50%">Question Details</th><th>NP Set</th><th>Answer</th><th>Action</th></tr></thead><tbody>`;
         
         snap.forEach(docSnap => {
           const d = docSnap.data();
@@ -354,9 +354,9 @@ Source: https://example.com"></textarea>
           let sourceHtml = "";
           if(d.source) {
              if(d.source.startsWith("http")) {
-                 sourceHtml = <a href="${d.source}" target="_blank" class="source-link">[Link] ${escapeHtml(d.source.substring(0, 30))}...</a>;
+                 sourceHtml = `<a href="${d.source}" target="_blank" class="source-link">[Link] ${escapeHtml(d.source.substring(0, 30))}...</a>`;
              } else {
-                 sourceHtml = <span style="color:#007bff; font-size:12px;">Src: ${escapeHtml(d.source)}</span>;
+                 sourceHtml = `<span style="color:#007bff; font-size:12px;">Src: ${escapeHtml(d.source)}</span>`;
              }
           }
 
@@ -379,9 +379,9 @@ Source: https://example.com"></textarea>
             </td>
           </tr>`;
         });
-        html += </tbody></table>;
+        html += `</tbody></table>`;
         uploadedList.innerHTML = html;
-        statusEl.textContent = Loaded ${snap.size} items.;
+        statusEl.textContent = `Loaded ${snap.size} items.`;
       } catch (err) {
         uploadedList.innerHTML = "<div class='danger'>Error: " + err.message + "</div>";
       }
