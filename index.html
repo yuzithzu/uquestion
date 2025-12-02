@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>PNLE Bulk Uploader (NP1–NP5) - AUTO FILTER</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 18px auto; padding: 12px; background-color: #f9f9f9; }
+    h2 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+    textarea { width: 100%; height: 240px; padding: 12px; font-size: 14px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-family: "Courier New", monospace; }
+    button { padding: 10px 16px; font-size: 14px; margin-right: 8px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; transition: background 0.2s; }
+    button:hover { background-color: #0056b3; }
+    button#btnClear { background-color: #6c757d; }
+    button.danger { background-color: #dc3545; }
+    button.danger:hover { background-color: #a71d2a; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    
+    .controls { margin: 15px 0; background: #fff; padding: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .status { margin-top: 10px; font-weight: bold; color: #1a1a1a; }
+    
+    .preview { border: 1px solid #ddd; padding: 15px; margin-top: 15px; max-height: 400px; overflow:auto; background:#fff; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .question-card { border-bottom: 1px solid #eee; padding: 12px 0; }
+    .question-card:last-child { border-bottom: none; }
+    
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    th { background: #f1f1f1; font-weight: 600; color: #555; }
+    th, td { text-align:left; padding: 10px; border-bottom:1px solid #eee; font-size: 14px; }
+    tr:hover { background-color: #f9f9f9; }
+    
+    .small { font-size:13px; color:#666; }
+    .muted { color:#666; font-size:13px; line-height: 1.5; }
+    .controls-row { display:flex; gap:10px; flex-wrap:wrap; align-items: center; }
+    
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+    .badge-ans { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .source-link { color: #007bff; text-decoration: none; font-size: 12px; }
+    .source-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h2>PNLE Bulk Uploader (NP1 - NP5 + ALL_TOPICS)</h2>
+
+  <p class="muted">
+    <b>Instructions:</b> Paste your questions below. Separate each question block by an empty line. <br>
+    Format: Question first, then choices (A, B, C, D), then "Answer: X", "Rationale: ...", "Source: ...", and optionally "NP: NP1" to force a topic.
+  </p>
+
+  <textarea id="bulkRaw" placeholder="Paste question blocks here...
+Example:
+A nurse is teaching ethical principles.
+A. Option 1
+B. Option 2
+C. Option 3
+D. Option 4
+Answer: A
+Rationale: This is the rationale.
+NP: NP5
+Source: https://example.com"></textarea>
+
+  <div class="controls">
+    <div class="controls-row">
+      <button id="btnPreview">1. Preview Parsed</button>
+      <button id="btnUpload">2. Upload All</button>
+      <button id="btnClear">Clear Text</button>
+      <button id="btnFetch">Fetch Database (View/Delete)</button>
+    </div>
+    <div class="status" id="status">Ready.</div>
+  </div>
+
+  <div id="preview" class="preview" style="display:none"></div>
+
+  <h3 style="margin-top:24px">Uploaded Questions (ALL_TOPICS)</h3>
+  <div id="uploadedList" class="preview" style="display:none"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import {
+      getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // YOUR FIREBASE CONFIG
+    const firebaseConfig = {
+      apiKey: "AIzaSyCmd6vmuXUPslLJf0w7I518C8UIaO2DoAA",
+      authDomain: "pnle-class.firebaseapp.com",
+      projectId: "pnle-class",
+      storageBucket: "pnle-class.firebasestorage.app",
+      messagingSenderId: "1024768890816",
+      appId: "1:1024768890816:web:28bf31d5ae67c679feda25",
+      measurementId: "G-JLS5ZGFP3J"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // --- IMPROVED TOPIC DETECTOR ---
+    function detectTopic(block) {
+      const q = block.toLowerCase();
+      
+      // 1. PRIORITY: Check for Explicit Tag (e.g., "NP: NP1")
+      const explicitMatch = block.match(/NP\s*[:\-]\s*(NP[1-5])/i);
+      if (explicitMatch) {
+        return explicitMatch[1].toUpperCase();
+      }
+
+      // 2. AUTO-FILTER KEYWORDS
+      const np1 = ["community", "doh", "surveillance", "immunization", "sanitation", "public health", "epidemiology", "chn", "barangay", "primary health", "family nursing", "environmental", "communicable", "non-communicable", "prevention", "health center"];
+      const np2 = ["cardiac", "chest pain", "renal", "neuro", "respiratory", "diabetes", "hypertension", "surgery", "post-op", "pre-op", "iv", "mental", "psych", "emergency", "ischemia", "myocardial", "oxygen", "nasal cannula", "electrolytes", "fluid", "adult health", "med-surg", "oncology"];
+      const np3 = ["pregnancy", "labor", "delivery", "postpartum", "newborn", "gtpal", "apgar", "breastfeeding", "pediatric", "pediatr", "child", "infant", "toddler", "growth", "development", "maternal", "ob", "gyne"];
+      const np4 = ["research", "hypothesis", "sampling", "statistics", "audit", "delegation", "leadership", "management", "priority", "collaboration", "referral", "assigning", "quality improvement", "staffing"];
+      const np5 = ["ethics", "teaching", "learning", "education", "legal", "law", "ra 9173", "rights", "informed consent", "documentation", "standard", "patient rights", "negligence", "malpractice", "bioethics", "beneficence", "autonomy", "justice", "veracity"];
+
+      function match(list) { return list.some(word => q.includes(word)); }
+      
+      if (match(np3)) return "NP3"; 
+      if (match(np5)) return "NP5";
+      if (match(np4)) return "NP4";
+      if (match(np1)) return "NP1"; // Moved NP1 check earlier for safety
+      if (match(np2)) return "NP2";
+      
+      return "NP2"; // Default fallback if nothing matches
+    }
+
+    // --- PARSING FUNCTION ---
+    function parseBlock(block) {
+      const lines = block.split(/\r?\n/).map(l => l.trim()).filter(l => l !== "");
+      if (lines.length === 0) return null;
+
+      // 1. Get Question (Assume first line)
+      let first = lines[0].replace(/^\d+[\.\)\-]\s*/, "").trim();
+      let question = first;
+
+      let A="", B="", C="", D="";
+      let answer = "";
+      let rationale = "";
+      let source = "";
+
+      // 2. Loop through remaining lines
+      for (const ln of lines.slice(1)) {
+        
+        // Check Answer
+        const mAns = ln.match(/^(answer|ans)\s*[:\-\.]\s*(.*)$/i);
+        if (mAns) {
+          let rawAns = mAns[2].trim().toUpperCase();
+          let letterMatch = rawAns.match(/^([A-D])/);
+          answer = letterMatch ? letterMatch[1] : rawAns; 
+          continue; 
+        }
+
+        // Check Rationale
+        const mRat = ln.match(/^(rationale|rat)\s*[:\-\.]\s*(.*)$/i);
+        if (mRat) {
+          rationale = mRat[2].trim();
+          continue;
+        }
+
+        // Check Source explicitly (Source: http...)
+        if (ln.toLowerCase().startsWith("source:")) {
+          source = ln.substring(7).trim();
+          continue;
+        }
+
+        // Skip Tags or Explicit NP lines during parsing (handled in detectTopic)
+        if (ln.toLowerCase().startsWith("np:") || ln.toLowerCase().startsWith("tags:")) {
+            continue;
+        }
+
+        // Check Choices
+        const mA = ln.match(/^[Aa]\s*[\.\)\-]\s*(.*)$/) || ln.match(/^A[:\s]\s*(.*)$/);
+        if (mA && !ln.toLowerCase().startsWith("answer")) { A = mA[1].trim(); continue; }
+
+        const mB = ln.match(/^[Bb]\s*[\.\)\-]\s*(.*)$/) || ln.match(/^B[:\s]\s*(.*)$/);
+        if (mB) { B = mB[1].trim(); continue; }
+
+        const mC = ln.match(/^[Cc]\s*[\.\)\-]\s*(.*)$/) || ln.match(/^C[:\s]\s*(.*)$/);
+        if (mC) { C = mC[1].trim(); continue; }
+
+        const mD = ln.match(/^[Dd]\s*[\.\)\-]\s*(.*)$/) || ln.match(/^D[:\s]\s*(.*)$/);
+        if (mD) { D = mD[1].trim(); continue; }
+      }
+
+      // Auto-detect URL in the block if explicit "Source:" wasn't found
+      if (!source) {
+        const urlMatch = block.match(/https?:\/\/[^\s]+/);
+        if (urlMatch) source = urlMatch[0];
+      }
+
+      return {
+        question: question,
+        choices: { A: A || "", B: B || "", C: C || "", D: D || "" },
+        answer: answer || "",
+        rationale: rationale || "",
+        source: source || "",
+        raw: block
+      };
+    }
+
+    function parseBulk(raw) {
+      const blocks = raw.split(/\n{2,}|\r\n{2,}|(?:^|\n)\s*---\s*(?:\n|$)/).map(b => b.trim()).filter(b => b !== "");
+      const parsed = [];
+      for (const b of blocks.slice(0, 30)) {
+        const p = parseBlock(b);
+        if (p) parsed.push(p);
+      }
+      return parsed;
+    }
+
+    // --- UI INTERACTIONS ---
+    const btnPreview = document.getElementById("btnPreview");
+    const btnUpload = document.getElementById("btnUpload");
+    const btnClear = document.getElementById("btnClear");
+    const btnFetch = document.getElementById("btnFetch");
+    const previewEl = document.getElementById("preview");
+    const statusEl = document.getElementById("status");
+    const uploadedList = document.getElementById("uploadedList");
+
+    btnPreview.addEventListener("click", () => {
+      const raw = document.getElementById("bulkRaw").value;
+      const parsed = parseBulk(raw);
+      
+      if (!parsed.length) {
+        previewEl.style.display = "block";
+        previewEl.innerHTML = "<div class='muted'>No valid question blocks found. Check your spacing.</div>";
+        statusEl.textContent = "No parsed questions.";
+        return;
+      }
+      
+      previewEl.style.display = "block";
+      let html = <div class="muted" style="margin-bottom:10px">Found ${parsed.length} questions.</div>;
+      
+      parsed.forEach((p, i) => {
+        const topic = detectTopic(p.raw); // This now handles explicit "NP:" tags
+        const missing = [];
+        if(!p.choices.A) missing.push("A");
+        if(!p.choices.B) missing.push("B");
+        if(!p.choices.C) missing.push("C");
+        if(!p.choices.D) missing.push("D");
+        if(!p.answer) missing.push("Ans");
+
+        const warn = missing.length > 0 ? <span style="color:red;font-weight:bold">[MISSING: ${missing.join(',')}]</span> : "";
+
+        // Source display in Preview
+        const sourceDisplay = p.source ? <div class="small" style="margin-top:2px; color:#007bff;"><b>Src:</b> ${escapeHtml(p.source)}</div> : "";
+
+        html += `<div class="question-card">
+          <div style="display:flex; justify-content:space-between;">
+             <b>Q#${i+1} (${topic}) ${warn}</b>
+             <span class="badge badge-ans">Ans: ${escapeHtml(p.answer)}</span>
+          </div>
+          <div style="margin:5px 0; font-weight:500;">${escapeHtml(p.question)}</div>
+          <div class="small" style="margin-left:10px;">
+             ${p.choices.A ? A: ${escapeHtml(p.choices.A)} : '<span style="color:red">A: MISSING</span>'}<br>
+             ${p.choices.B ? B: ${escapeHtml(p.choices.B)} : '<span style="color:red">B: MISSING</span>'}<br>
+             ${p.choices.C ? C: ${escapeHtml(p.choices.C)} : '<span style="color:red">C: MISSING</span>'}<br>
+             ${p.choices.D ? D: ${escapeHtml(p.choices.D)} : '<span style="color:red">D: MISSING</span>'}
+          </div>
+          ${p.rationale ? <div class="small" style="margin-top:5px; background:#f0f0f0; padding:5px;"><b>Rat:</b> ${escapeHtml(p.rationale)}</div> : ""}
+          ${sourceDisplay}
+        </div>`;
+      });
+      previewEl.innerHTML = html;
+      statusEl.textContent = Previewed ${parsed.length} question(s).;
+    });
+
+    btnClear.addEventListener("click", () => {
+      document.getElementById("bulkRaw").value = "";
+      previewEl.style.display = "none";
+      statusEl.textContent = "Cleared.";
+    });
+
+    btnUpload.addEventListener("click", async () => {
+      const raw = document.getElementById("bulkRaw").value;
+      const parsed = parseBulk(raw);
+
+      if (!parsed.length) {
+        statusEl.textContent = "Nothing to upload.";
+        return;
+      }
+      
+      btnUpload.disabled = true;
+      btnUpload.textContent = "Uploading...";
+      statusEl.textContent = "Uploading " + parsed.length + " question(s)...";
+
+      try {
+        let count = 0;
+        for (const p of parsed) {
+          if (!p.question || !p.answer) continue;
+
+          const topic = detectTopic(p.raw); // Uses the updated logic
+          
+          const data = {
+            topic: topic,
+            question: cleanText(p.question),
+            choices: {
+              A: cleanText(p.choices.A),
+              B: cleanText(p.choices.B),
+              C: cleanText(p.choices.C),
+              D: cleanText(p.choices.D),
+            },
+            answer: (p.answer || "").toUpperCase(),
+            rationale: cleanText(p.rationale),
+            source: p.source || "",
+            timestamp: Date.now()
+          };
+
+          const allRef = doc(collection(db, "ALL_TOPICS"));
+          const id = allRef.id;
+          
+          // 1. Save to ALL_TOPICS (Main Feed)
+          await setDoc(allRef, data);
+          
+          // 2. Save to Specific NP Collection (e.g., NP1, NP5)
+          await setDoc(doc(db, topic, id), data);
+
+          count++;
+        }
+
+        statusEl.textContent = Success! Uploaded ${count} questions.;
+        alert(Successfully uploaded ${count} questions.);
+        document.getElementById("bulkRaw").value = "";
+        previewEl.style.display = "none";
+        btnUpload.textContent = "2. Upload All";
+        
+        await fetchUploaded(); 
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Error: " + err.message;
+        alert("Upload Error: " + err.message);
+      } finally {
+        btnUpload.disabled = false;
+      }
+    });
+
+    // --- FETCH & VIEW ---
+    async function fetchUploaded() {
+      uploadedList.style.display = "block";
+      uploadedList.innerHTML = "<div class='small'>Loading database...</div>";
+      try {
+        const q = query(collection(db, "ALL_TOPICS"), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+          uploadedList.innerHTML = "<div class='small'>Database is empty.</div>";
+          statusEl.textContent = "No items in DB.";
+          return;
+        }
+
+        let html = <table><thead><tr><th style="width:50%">Question Details</th><th>NP Set</th><th>Answer</th><th>Action</th></tr></thead><tbody>;
+        
+        snap.forEach(docSnap => {
+          const d = docSnap.data();
+          const id = docSnap.id;
+          
+          // Source display in Database List
+          let sourceHtml = "";
+          if(d.source) {
+             if(d.source.startsWith("http")) {
+                 sourceHtml = <a href="${d.source}" target="_blank" class="source-link">[Link] ${escapeHtml(d.source.substring(0, 30))}...</a>;
+             } else {
+                 sourceHtml = <span style="color:#007bff; font-size:12px;">Src: ${escapeHtml(d.source)}</span>;
+             }
+          }
+
+          html += `<tr id="row_${id}">
+            <td>
+              <div style="font-weight:bold; margin-bottom:4px;">${escapeHtml(d.question)}</div>
+              <div class="small" style="color:#555">
+                A: ${escapeHtml(d.choices?.A || "")} <br>
+                B: ${escapeHtml(d.choices?.B || "")} <br>
+                C: ${escapeHtml(d.choices?.C || "")} <br>
+                D: ${escapeHtml(d.choices?.D || "")}
+              </div>
+              <div class="small" style="margin-top:4px; font-style:italic">Rat: ${escapeHtml(d.rationale || "None")}</div>
+              <div style="margin-top:2px;">${sourceHtml}</div>
+            </td>
+            <td class="small"><b>${escapeHtml(d.topic)}</b></td>
+            <td class="small" style="font-weight:bold; color:green; font-size:16px; text-align:center">${escapeHtml(d.answer)}</td>
+            <td>
+              <button class="danger" onclick="window.deleteItem('${id}', '${d.topic}')">Delete</button>
+            </td>
+          </tr>`;
+        });
+        html += </tbody></table>;
+        uploadedList.innerHTML = html;
+        statusEl.textContent = Loaded ${snap.size} items.;
+      } catch (err) {
+        uploadedList.innerHTML = "<div class='danger'>Error: " + err.message + "</div>";
+      }
+    }
+
+    btnFetch.addEventListener("click", fetchUploaded);
+
+    window.deleteItem = async function(id, topic) {
+      if (!confirm("Delete this question from ALL_TOPICS and " + topic + "?")) return;
+      try {
+        await deleteDoc(doc(db, "ALL_TOPICS", id));
+        if(topic) await deleteDoc(doc(db, topic, id));
+        const row = document.getElementById("row_" + id);
+        if (row) row.style.display = "none";
+      } catch (err) {
+        alert("Error deleting: " + err.message);
+      }
+    };
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    }
+    function cleanText(s) {
+      return (s || "").replace(/\s+/g, " ").trim();
+    }
+
+  </script>
+</body>
+</html>
